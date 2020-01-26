@@ -3,7 +3,7 @@ require "kemal-session"
 
 module Kemal
   class Session
-    class MysqlEngine < Engine
+    class PostgresEngine < Engine
       class StorageInstance
         macro define_storage(vars)
               JSON.mapping({
@@ -58,12 +58,12 @@ module Kemal
       def initialize(@connection : DB::Database, @sessiontable : String = "sessions", @cachetime : Int32 = 5)
         # check if table exists, if not create it
         sql = "CREATE TABLE IF NOT EXISTS #{@sessiontable} (
-            `session_id` char(36) NOT NULL,
-            `data` text,
-            `updated_at` datetime DEFAULT NULL,
-            PRIMARY KEY (`session_id`)
-          ) ENGINE=InnoDB DEFAULT CHARSET=utf8; "
-        @connection.exec(sql, @sessiontable)
+            \"session_id\" varchar(36) NOT NULL,
+            \"data\" text,
+            \"updated_at\" timestamp DEFAULT NULL,
+            PRIMARY KEY (\"session_id\")
+          ); "
+        @connection.exec(sql)
         @cache = {} of String => StorageInstance
         @cached_session_read_times = {} of String => Time
       end
@@ -71,7 +71,7 @@ module Kemal
       def run_gc
         # delete old sessions here
         expiretime = Time.local - Kemal::Session.config.timeout
-        sql = "delete from #{@sessiontable} where updated_at < ?"
+        sql = "delete from #{@sessiontable} where updated_at < $1"
         @connection.exec(sql, expiretime)
         # delete old memory cache too, if it exists and is too old
         @cache.each do |session_id, session|
@@ -94,14 +94,14 @@ module Kemal
       def create_session(session_id : String)
         session = StorageInstance.new
         data = session.to_json
-        sql = "REPLACE into #{@sessiontable} (session_id,data,updated_at) values(?,?,NOW())"
+        sql = "insert into #{@sessiontable} (session_id,data,updated_at) values($1,$2,NOW()) on conflict (session_id) do update set data = excluded.data, updated_at = excluded.updated_at"
         @connection.exec(sql, session_id, data)
         return session
       end
 
       def save_cache(session_id)
         data = @cache[session_id].to_json
-        sql = "update #{@sessiontable} set data=?,updated_at=NOW() where session_id = ? "
+        sql = "update #{@sessiontable} set data=$1,updated_at=NOW() where session_id = $2 "
         res = @connection.exec(sql, data, session_id)
       end
 
@@ -118,7 +118,7 @@ module Kemal
       end
 
       def session_exists?(session_id : String) : Bool
-        sql = "select session_id from #{@sessiontable} where session_id = ?"
+        sql = "select session_id from #{@sessiontable} where session_id = $1"
         begin
           @connection.scalar(sql, session_id)
           return true
@@ -128,7 +128,7 @@ module Kemal
       end
 
       def destroy_session(session_id : String)
-        sql = "delete from #{@sessiontable} where session_id = ?"
+        sql = "delete from #{@sessiontable} where session_id = $1"
         @connection.exec(sql, session_id)
       end
 
@@ -138,14 +138,14 @@ module Kemal
 
       def load_into_cache(session_id : String) : StorageInstance
         begin
-          json = @connection.query_one "select data from #{@sessiontable} where session_id = ?", session_id, &.read(String)
+          json = @connection.query_one "select data from #{@sessiontable} where session_id = $1", session_id, &.read(String)
           @cache[session_id] = StorageInstance.from_json(json.to_s)
         rescue ex
           # recreates session based on id, if it has been deleted?
           @cache[session_id] = create_session(session_id)
         end
         @cached_session_read_times[session_id] = Time.utc
-        @connection.exec("update #{@sessiontable} set updated_at = NOW() where session_id = ?", session_id)
+        @connection.exec("update #{@sessiontable} set updated_at = NOW() where session_id = $1", session_id)
         @cache[session_id]
       end
 
@@ -177,6 +177,12 @@ module Kemal
             def {{name.id}}s(session_id : String) : Hash(String, {{type}})
               load_into_cache(session_id) unless is_in_cache?(session_id)
               return @cache[session_id].{{name.id}}s
+            end
+
+            def delete_{{name.id}}(session_id : String, k : String)
+              load_into_cache(session_id) unless is_in_cache?(session_id)
+              @cache[session_id].delete_{{name.id}}(k)
+              save_cache(session_id)
             end
           {% end %}
         end

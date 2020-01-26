@@ -1,5 +1,5 @@
 language: crystal
-services: 
-  - mysql
+services:
+  - pgsql
 before_install:
-  - mysql -e 'CREATE DATABASE session_test;'
+  - pgsql -e 'CREATE DATABASE session_test;'

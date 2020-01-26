@@ -1,14 +1,14 @@
-name: kemal-session-mysql
-version: 0.2.0
+name: kemal-session-postgres
+version: 0.1.0
 
 authors:
-  - Cris Ward <cris@duodesign.co.uk>
+  - IOM <>
 
 dependencies:
   kemal-session:
     github: kemalcr/kemal-session
-  mysql:
-    github: crystal-lang/crystal-mysql
+  pg:
+    github: will/crystal-pg
 
 crystal: 0.32.1
 

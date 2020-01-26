@@ -1,6 +1,6 @@
 require "./spec_helper"
 
-describe "Kemal::Session::MysqlEngine" do
+describe "Kemal::Session::PostgresEngine" do
   # TODO: confirm the table name is used...
   describe ".int" do
     it "can save a value" do
